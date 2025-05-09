@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PDBFixer 在线修复工具</title>
+  <style>
+    body { font-family: Arial; background: #eef6f9; padding: 20px; }
+    input[type="text"], input[type="file"] {
+      padding: 6px;
+      font-size: 14px;
+      width: 400px;
+      max-width: 90%;
+    }
+    button { padding: 8px 16px; margin-top: 10px; font-size: 14px; }
+    #log {
+      white-space: pre-wrap;
+      margin-top: 20px;
+      background: #fff;
+      padding: 10px;
+      border: 1px solid #ccc;
+      height: 180px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>🔧 PDB 结构修复（基于 PDBFixer 实时修复）</h2>
+
+  <!-- ✅ 自定义服务器地址 -->
+  <div>
+    <label>服务器地址：</label>
+    <input type="text" id="server" value="http://localhost:5050">
+  </div>
+
+  <input type="file" id="pdbFile" accept=".pdb">
+  <button onclick="uploadAndFix()">上传并修复结构</button>
+
+  <div id="log">📥 请上传 PDB 文件...</div>
+
+  <script>
+    function log(msg) {
+      const logDiv = document.getElementById('log');
+      logDiv.innerText += msg + '\n';
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    async function uploadAndFix() {
+      const fileInput = document.getElementById('pdbFile');
+      const file = fileInput.files[0];
+      const server = document.getElementById('server').value.trim().replace(/\/+$/, ''); // 去掉尾部斜杠
+      if (!file) {
+        log("⚠️ 请先选择一个 PDB 文件");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      log(`🚀 上传中：${file.name} 到 ${server}/repair`);
+
+      try {
+        const response = await fetch(`${server}/repair`, {
+          method: "POST",
+          body: formData
+        });
+
+        if (!response.ok) {
+          log(`❌ 修复失败，状态码：${response.status}`);
+          return;
+        }
+
+        const result = await response.json();
+        const s = result.summary;
+
+        log(`✅ 修复完成！`);
+        log(`🧾 原子总数：${s.original_atoms} → ${s.repaired_atoms}`);
+        log(`➕ 新增原子：${s.added_atoms}`);
+        log(`➕ 新增氢原子：${s.added_hydrogens}`);
+        log(`➕ 新增水分子（HOH）：${s.added_waters}`);
+        log(`➕ 新增金属离子：${s.added_metals}`);
+
+        const url = `${server}/download/${result.filename}`;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = result.filename;
+        a.innerText = "⬇️ 点击下载修复后文件";
+        document.getElementById("log").appendChild(document.createElement("br"));
+        document.getElementById("log").appendChild(a);
+
+      } catch (err) {
+        log(`⚠️ 请求失败：${err}`);
+      }
+    }
+  </script>
+
+</body>
+</html>

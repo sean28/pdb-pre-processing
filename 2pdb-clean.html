@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PDB 清理工具 · 去除无关分子</title>
+  <style>
+    body { font-family: Arial; background: #eef6f9; padding: 20px; }
+    h2 { color: #1d4e89; }
+    input[type="file"], label { display: block; margin-top: 10px; }
+    button { padding: 8px 16px; margin-top: 15px; font-size: 15px; }
+    #log { white-space: pre-wrap; margin-top: 20px; background: #fff; padding: 10px; border: 1px solid #ccc; height: 180px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+
+  <h2>🔬 第2步：去除无关分子</h2>
+  <div style="text-align: left; line-height: 1.5; font-size: 16px; margin-top: -10px; margin-bottom: 20px;">
+    • 删除：溶剂、配体、离子、甘油、HEPES等非研究目标分子
+    <br>
+    • 可选保留：配体（若做复合物模拟）、辅因子、金属等
+  </div>
+
+  <input type="file" id="pdbFile" accept=".pdb">
+  <label><input type="checkbox" id="keepLigand"> 保留配体</label>
+  <label><input type="checkbox" id="keepCofactor"> 保留辅因子（如 NAD/FAD）</label>
+  <label><input type="checkbox" id="keepMetals"> 保留金属离子（ZN/FE/MG/CA）</label>
+  <label><input type="checkbox" id="keepchains"> 仅保留氨基酸链条（仅ATOM）</label>
+
+  <div id="chainSelector" style="margin-top: 0px; display: none;">
+    <div id="chainOptions"></div>
+  </div>
+
+  <button onclick="processPDB()">处理并下载</button>
+  <div id="log">📥 请选择一个 PDB 文件进行处理</div>
+
+  <script>
+    const metalResidues = ['ZN', 'FE', 'MG', 'CA'];
+    const cofactorResidues = ['NAD', 'FAD', 'FMN', 'NAP'];
+    const ligandResidues = ['LIG', 'DRG', 'INH'];
+    const solventResidues = ['HOH', 'WAT', 'DOD', 'SO4', 'CL', 'NA', 'K', 'HEPES', 'GOL', 'IOD', 'MES', 'ACN', 'ACT'];
+    const aaResidues = ['ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE','LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL','SEC','PYL','MSE'];
+
+    let globalAllResKeys = new Set();
+
+    function log(msg) {
+      const logDiv = document.getElementById('log');
+      logDiv.innerText += msg + '\n';
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function shouldRemove(line, options) {
+      if (!line.startsWith('ATOM') && !line.startsWith('HETATM')) return false;
+      const resname = line.substring(17, 20).trim().toUpperCase();
+      const chainID = line.charAt(21).trim();
+
+      if (options.keepChains) {
+        if (!aaResidues.includes(resname)) return true;
+        if (options.selectedChains.length > 0 && !options.selectedChains.includes(chainID)) return true;
+        return false;
+      }
+
+      if (solventResidues.includes(resname)) {
+        if (options.keepMetals && metalResidues.includes(resname)) return false;
+        if (options.keepCofactor && cofactorResidues.includes(resname)) return false;
+        if (options.keepLigand && ligandResidues.includes(resname)) return false;
+        return true;
+      }
+
+      return false;
+    }
+    function processPDB() {
+      const fileInput = document.getElementById('pdbFile');
+      const file = fileInput.files[0];
+      if (!file) {
+        log("⚠️ 请先选择 PDB 文件");
+        return;
+      }
+
+      const keepOptions = {
+        keepLigand: document.getElementById('keepLigand').checked,
+        keepCofactor: document.getElementById('keepCofactor').checked,
+        keepMetals: document.getElementById('keepMetals').checked,
+        keepChains: document.getElementById('keepchains').checked,
+        selectedChains: Array.from(document.querySelectorAll('#chainOptions input:checked')).map(cb => cb.value)
+      };
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const lines = e.target.result.split('\n');
+        const kept = [], removed = [];
+        const atomSerialsToKeep = new Set(); 
+        const residueSet = new Set();
+        const chainMap = {};
+
+        for (const line of lines) {
+          if (!line.startsWith('ATOM') && !line.startsWith('HETATM')) {
+            if (line.startsWith('CONECT')) {
+              const tokens = line.trim().split(/\s+/).slice(1);
+              const allInSet = tokens.every(id => atomSerialsToKeep.has(id));
+              if (allInSet) kept.push(line);
+            } else if (line.startsWith('TER')) {
+              const chainID = line.charAt(21).trim();
+              if (chainMap[chainID] && chainMap[chainID].size > 0) {
+                kept.push(line);
+              }
+            } else {
+              kept.push(line);
+            }
+            continue;
+          }
+
+          const resname = line.substring(17, 20).trim();
+          const chainID = line.charAt(21).trim();
+          const resSeq = line.substring(22, 26).trim();
+          const resKey = `${chainID}:${resname}-${resSeq}`;
+
+          if (shouldRemove(line, keepOptions)) {
+            removed.push(line);
+          } else {
+            atomSerialsToKeep.add(line.substring(6, 11).trim());
+            kept.push(line);
+            residueSet.add(resKey);
+            if (!chainMap[chainID]) chainMap[chainID] = new Set();
+            chainMap[chainID].add(resKey);
+          }
+        }
+
+        const cleanedText = kept.join('\n');
+        const filename = file.name.replace('.pdb', '_cleaned.pdb');
+        const blob = new Blob([cleanedText], { type: 'text/plain' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+
+        const removedAtoms = removed.length;
+        const keptAtoms = kept.filter(l => l.startsWith('ATOM') || l.startsWith('HETATM')).length;
+        const removedResidues = [...new Set(removed.map(l => l.substring(17, 20).trim()))];
+
+        log(`✅ 处理完成：${file.name}`);
+        log(`🧹 删除原子行：${removedAtoms}`);
+        log(`🧾 删除残基类型：${removedResidues.join(', ') || '无'}`);
+        log(`📊 保留原子行数：${keptAtoms}`);
+        log(`📦 保留残基数：${residueSet.size}`);
+        for (const [chain, set] of Object.entries(chainMap)) {
+          log(`  🔗 链 ${chain || '[空]'}：${set.size} 个残基`);
+        }
+        log(`⬇️ 下载文件名：${filename}`);
+      };
+      reader.readAsText(file);
+    }
+
+    document.getElementById('keepchains').addEventListener('change', function () {
+      const disabled = this.checked;
+      document.getElementById('keepLigand').disabled = disabled;
+      document.getElementById('keepCofactor').disabled = disabled;
+      document.getElementById('keepMetals').disabled = disabled;
+      document.getElementById('chainSelector').style.display = disabled ? 'block' : 'none';
+    });
+
+    document.getElementById('pdbFile').addEventListener('change', function () {
+      const file = this.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const lines = e.target.result.split('\n');
+        const allChains = new Set();
+
+        for (const line of lines) {
+          if (line.startsWith('ATOM') || line.startsWith('HETATM')) {
+            const resname = line.substring(17, 20).trim();
+            const chainID = line.charAt(21).trim();
+            const resSeq = line.substring(22, 26).trim();
+            const resKey = `${chainID}:${resname}-${resSeq}`;
+            globalAllResKeys.add(resKey);
+          }
+        }
+
+        for (const line of lines) {
+          if (line.startsWith('ATOM') || line.startsWith('HETATM')) {
+            const chainID = line.charAt(21).trim();
+            allChains.add(chainID);
+          }
+        }
+
+        const chainSelector = document.getElementById('chainSelector');
+        const chainOptionsDiv = document.getElementById('chainOptions');
+        chainOptionsDiv.innerHTML = '';
+        if (document.getElementById('keepchains').checked) {
+          chainSelector.style.display = 'block';
+        } else {
+          chainSelector.style.display = 'none';
+        }
+
+        [...allChains].sort().forEach(chain => {
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = chain;
+          checkbox.checked = true;
+          checkbox.id = `chain_${chain}`;
+
+          const label = document.createElement('label');
+          label.style.marginRight = '10px';
+          label.appendChild(checkbox);
+          label.appendChild(document.createTextNode(` 链 ${chain || '[空]'}`));
+          chainOptionsDiv.appendChild(label);
+        });
+      };
+      reader.readAsText(file);
+    });
+  </script>
+</body>
+</html>
