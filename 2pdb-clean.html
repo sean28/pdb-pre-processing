@@ -1,43 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>PDB 清理工具 · 去除无关分子</title>
+  <meta charset="UTF-8" />
+  <title>PDB Cleaner – Retain Protein, Remove Non-target Entities</title>
   <style>
-    body { font-family: Arial; background: #eef6f9; padding: 20px; }
-    h2 { color: #1d4e89; }
-    input[type="file"], label { display: block; margin-top: 10px; }
-    button { padding: 8px 16px; margin-top: 15px; font-size: 15px; }
-    #log { white-space: pre-wrap; margin-top: 20px; background: #fff; padding: 10px; border: 1px solid #ccc; height: 180px; overflow-y: auto; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #eef5f9; margin: 0; padding: 40px 16px; color: #333; }
+    .container { max-width: 900px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 30px 40px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    h2 { font-size: 24px; color: #1d4e89; margin-bottom: 12px; text-align: center; }
+    .intro { font-size: 14px; color: #555; line-height: 1.6; margin-bottom: 20px; text-align: left; }
+    label { font-weight: 600; font-size: 14px; color: #2c3e50; display: block; margin-top: 12px; }
+    input[type="file"] { margin-top: 6px; }
+    input[type="checkbox"] { margin-right: 6px; }
+    button { display: block; padding: 10px 24px; background-color: #3498db; color: white; font-size: 15px; border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.3s; margin-top: 20px; }
+    button:hover { background-color: #2980b9; }
+    #chainSelector { margin-top: 10px; }
+    #chainOptions label { display: inline-block; margin-right: 14px; margin-top: 6px; font-size: 13.5px; }
+    #log { margin-top: 25px; background: #fdfdfd; border: 1px solid #ccc; padding: 14px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; height: 240px; overflow-y: auto; background-color: #f9fcff; }
   </style>
 </head>
 <body>
+  <div class="container">
+    <h2>🧹 Step 2: PDB Structure Cleaner</h2>
+    <div class="intro">
+      • Removes common non-target molecules such as solvent (HOH, WAT), ligands, ions, glycerol, HEPES, etc.<br>
+      • Optional: keep ligands (for complex simulation), cofactors (e.g. NAD/FAD), or metal ions (Zn/Mg)<br>
+      • Or enable “Keep Protein Chains” to retain only backbone atoms (ATOM records)
+    </div>
 
-  <h2>🔬 第2步：去除无关分子</h2>
-  <div style="text-align: left; line-height: 1.5; font-size: 16px; margin-top: -10px; margin-bottom: 20px;">
-    • 删除：溶剂、配体、离子、甘油、HEPES等非研究目标分子
-    <br>
-    • 可选保留：配体（若做复合物模拟）、辅因子、金属等
+    <label for="pdbFile">📁 Upload a PDB File</label>
+    <input type="file" id="pdbFile" accept=".pdb">
+
+    <label><input type="checkbox" id="keepLigand"> Keep Ligands</label>
+    <label><input type="checkbox" id="keepCofactor"> Keep Cofactors (e.g. NAD/FAD)</label>
+    <label><input type="checkbox" id="keepMetals"> Keep Metal Ions (ZN/FE/MG/CA)</label>
+    <label><input type="checkbox" id="keepchains"> Keep One Protein Chains (Oonly ATOM)</label>
+
+    <div id="chainSelector" style="display: none;">
+      <label style="margin-top: 12px;">Select Chains to Keep:</label>
+      <div id="chainOptions"></div>
+    </div>
+
+    <button onclick="processPDB()">🛠️ Clean and Download</button>
+
+    <div id="log">📥 Please select a PDB file to begin cleaning...</div>
   </div>
-
-  <input type="file" id="pdbFile" accept=".pdb">
-  <label><input type="checkbox" id="keepLigand"> 保留配体</label>
-  <label><input type="checkbox" id="keepCofactor"> 保留辅因子（如 NAD/FAD）</label>
-  <label><input type="checkbox" id="keepMetals"> 保留金属离子（ZN/FE/MG/CA）</label>
-  <label><input type="checkbox" id="keepchains"> 仅保留氨基酸链条（仅ATOM）</label>
-
-  <div id="chainSelector" style="margin-top: 0px; display: none;">
-    <div id="chainOptions"></div>
-  </div>
-
-  <button onclick="processPDB()">处理并下载</button>
-  <div id="log">📥 请选择一个 PDB 文件进行处理</div>
 
   <script>
-    const metalResidues = ['ZN', 'FE', 'MG', 'CA'];
-    const cofactorResidues = ['NAD', 'FAD', 'FMN', 'NAP'];
-    const ligandResidues = ['LIG', 'DRG', 'INH'];
-    const solventResidues = ['HOH', 'WAT', 'DOD', 'SO4', 'CL', 'NA', 'K', 'HEPES', 'GOL', 'IOD', 'MES', 'ACN', 'ACT'];
+    const metalResidues = ['ZN','FE','MG','CA'];
+    const cofactorResidues = ['NAD','FAD','FMN','NAP'];
+    const ligandResidues = ['LIG','DRG','INH'];
+    const solventResidues = ['HOH','WAT','DOD','SO4','CL','NA','K','HEPES','GOL','IOD','MES','ACN','ACT'];
     const aaResidues = ['ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE','LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL','SEC','PYL','MSE'];
 
     let globalAllResKeys = new Set();
@@ -68,13 +80,11 @@
 
       return false;
     }
+
     function processPDB() {
       const fileInput = document.getElementById('pdbFile');
       const file = fileInput.files[0];
-      if (!file) {
-        log("⚠️ 请先选择 PDB 文件");
-        return;
-      }
+      if (!file) { log("⚠️ Please select a PDB file."); return; }
 
       const keepOptions = {
         keepLigand: document.getElementById('keepLigand').checked,
@@ -87,22 +97,16 @@
       const reader = new FileReader();
       reader.onload = function (e) {
         const lines = e.target.result.split('\n');
-        const kept = [], removed = [];
-        const atomSerialsToKeep = new Set(); 
-        const residueSet = new Set();
-        const chainMap = {};
+        const kept = [], removed = [], atomSerialsToKeep = new Set(), residueSet = new Set(), chainMap = {};
 
         for (const line of lines) {
           if (!line.startsWith('ATOM') && !line.startsWith('HETATM')) {
             if (line.startsWith('CONECT')) {
               const tokens = line.trim().split(/\s+/).slice(1);
-              const allInSet = tokens.every(id => atomSerialsToKeep.has(id));
-              if (allInSet) kept.push(line);
+              if (tokens.every(id => atomSerialsToKeep.has(id))) kept.push(line);
             } else if (line.startsWith('TER')) {
               const chainID = line.charAt(21).trim();
-              if (chainMap[chainID] && chainMap[chainID].size > 0) {
-                kept.push(line);
-              }
+              if (chainMap[chainID] && chainMap[chainID].size > 0) kept.push(line);
             } else {
               kept.push(line);
             }
@@ -138,15 +142,15 @@
         const keptAtoms = kept.filter(l => l.startsWith('ATOM') || l.startsWith('HETATM')).length;
         const removedResidues = [...new Set(removed.map(l => l.substring(17, 20).trim()))];
 
-        log(`✅ 处理完成：${file.name}`);
-        log(`🧹 删除原子行：${removedAtoms}`);
-        log(`🧾 删除残基类型：${removedResidues.join(', ') || '无'}`);
-        log(`📊 保留原子行数：${keptAtoms}`);
-        log(`📦 保留残基数：${residueSet.size}`);
+        log(`✅ Cleaned: ${file.name}`);
+        log(`🧹 Removed atom lines: ${removedAtoms}`);
+        log(`🧾 Removed residue types: ${removedResidues.join(', ') || 'None'}`);
+        log(`📊 Remaining atom lines: ${keptAtoms}`);
+        log(`📦 Remaining residues: ${residueSet.size}`);
         for (const [chain, set] of Object.entries(chainMap)) {
-          log(`  🔗 链 ${chain || '[空]'}：${set.size} 个残基`);
+          log(`  🔗 Chain ${chain || '[empty]'}: ${set.size} residues`);
         }
-        log(`⬇️ 下载文件名：${filename}`);
+        log(`⬇️ Saved as: ${filename}`);
       };
       reader.readAsText(file);
     }
@@ -175,12 +179,6 @@
             const resSeq = line.substring(22, 26).trim();
             const resKey = `${chainID}:${resname}-${resSeq}`;
             globalAllResKeys.add(resKey);
-          }
-        }
-
-        for (const line of lines) {
-          if (line.startsWith('ATOM') || line.startsWith('HETATM')) {
-            const chainID = line.charAt(21).trim();
             allChains.add(chainID);
           }
         }
@@ -202,9 +200,8 @@
           checkbox.id = `chain_${chain}`;
 
           const label = document.createElement('label');
-          label.style.marginRight = '10px';
           label.appendChild(checkbox);
-          label.appendChild(document.createTextNode(` 链 ${chain || '[空]'}`));
+          label.appendChild(document.createTextNode(` Chain ${chain || '[empty]'}`));
           chainOptionsDiv.appendChild(label);
         });
       };

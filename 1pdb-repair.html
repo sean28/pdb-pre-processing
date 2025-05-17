@@ -1,42 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>PDBFixer 在线修复工具</title>
+  <meta charset="UTF-8" />
+  <title>PDBFixer Online Repair Tool</title>
   <style>
-    body { font-family: Arial; background: #eef6f9; padding: 20px; }
-    input[type="text"], input[type="file"] {
-      padding: 6px;
-      font-size: 14px;
-      width: 400px;
-      max-width: 90%;
-    }
-    button { padding: 8px 16px; margin-top: 10px; font-size: 14px; }
-    #log {
-      white-space: pre-wrap;
-      margin-top: 20px;
-      background: #fff;
-      padding: 10px;
-      border: 1px solid #ccc;
-      height: 180px;
-      overflow-y: auto;
-    }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #eef5f9; margin: 0; padding: 40px 16px; color: #333; }
+    .container { max-width: 880px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 30px 40px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    h2 { font-size: 24px; color: #1d4e89; margin-bottom: 20px; text-align: center; }
+    label { font-weight: 600; font-size: 14px; color: #2c3e50; display: block; margin-bottom: 8px; }
+    input[type="text"], input[type="file"] { width: 100%; max-width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; margin-bottom: 16px; }
+    button { display: inline-block; padding: 10px 24px; background-color: #3498db; color: white; font-size: 15px; border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.3s; }
+    button:hover { background-color: #2980b9; }
+    #log { margin-top: 30px; background: #fdfdfd; border: 1px solid #ccc; padding: 14px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; height: 220px; overflow-y: auto; background-color: #f9fcff; }
+    a { color: #1d4e89; font-weight: bold; text-decoration: none; display: inline-block; margin-top: 10px; }
+    a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
+  <div class="container">
+    <h2>🔧 PDB Structure Repair (via PDBFixer)</h2>
 
-  <h2>🔧 PDB 结构修复（基于 PDBFixer 实时修复）</h2>
+    <label for="server">🖥️ Server Address</label>
+    <input type="text" id="server" value="https://aezvwkinighy.ap-southeast-1.clawcloudrun.com/" />
 
-  <!-- ✅ 自定义服务器地址 -->
-  <div>
-    <label>服务器地址：</label>
-    <input type="text" id="server" value="https://aezvwkinighy.ap-southeast-1.clawcloudrun.com">
+    <label for="pdbFile">📁 Upload a PDB File</label>
+    <input type="file" id="pdbFile" accept=".pdb" />
+
+    <button onclick="uploadAndFix()">Upload and Repair</button>
+
+    <div id="log">📥 Please upload a PDB file...</div>
   </div>
-
-  <input type="file" id="pdbFile" accept=".pdb">
-  <button onclick="uploadAndFix()">上传并修复结构</button>
-
-  <div id="log">📥 请上传 PDB 文件...</div>
 
   <script>
     function log(msg) {
@@ -48,51 +41,48 @@
     async function uploadAndFix() {
       const fileInput = document.getElementById('pdbFile');
       const file = fileInput.files[0];
-      const server = document.getElementById('server').value.trim().replace(/\/+$/, ''); // 去掉尾部斜杠
-      if (!file) {
-        log("⚠️ 请先选择一个 PDB 文件");
-        return;
-      }
+      const server = document.getElementById('server').value.trim().replace(/\/+$/, '');
+      if (!file) { log("⚠️ Please select a PDB file first."); return; }
 
       const formData = new FormData();
       formData.append("file", file);
 
-      log(`🚀 上传中：${file.name} 到 ${server}/repair`);
+      log(`🚀 Uploading: ${file.name} to ${server}/repair`);
 
       try {
         const response = await fetch(`${server}/repair`, {
           method: "POST",
-          body: formData
+          body: formData,
+          mode: "cors",
+          credentials: "omit"
         });
 
         if (!response.ok) {
-          log(`❌ 修复失败，状态码：${response.status}`);
+          log(`❌ Repair failed, status code: ${response.status}`);
           return;
         }
 
         const result = await response.json();
         const s = result.summary;
 
-        log(`✅ 修复完成！`);
-        log(`🧾 原子总数：${s.original_atoms} → ${s.repaired_atoms}`);
-        log(`➕ 新增原子：${s.added_atoms}`);
-        log(`➕ 新增氢原子：${s.added_hydrogens}`);
-        log(`➕ 新增水分子（HOH）：${s.added_waters}`);
-        log(`➕ 新增金属离子：${s.added_metals}`);
+        log(`✅ Repair complete!`);
+        log(`🧾 Atoms: ${s.original_atoms} → ${s.repaired_atoms}`);
+        log(`➕ Added atoms: ${s.added_atoms}`);
+        log(`➕ Hydrogens: ${s.added_hydrogens}`);
+        log(`➕ Waters (HOH): ${s.added_waters}`);
+        log(`➕ Metals: ${s.added_metals}`);
 
         const url = `${server}/download/${result.filename}`;
         const a = document.createElement("a");
         a.href = url;
         a.download = result.filename;
-        a.innerText = "⬇️ 点击下载修复后文件";
+        a.innerText = "⬇️ Click to download repaired file";
         document.getElementById("log").appendChild(document.createElement("br"));
         document.getElementById("log").appendChild(a);
-
       } catch (err) {
-        log(`⚠️ 请求失败：${err}`);
+        log(`⚠️ Request failed: ${err}`);
       }
     }
   </script>
-
 </body>
 </html>
