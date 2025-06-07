@@ -11,6 +11,11 @@
     label { font-weight: 600; font-size: 14px; color: #2c3e50; display: block; margin-top: 12px; }
     input[type="file"] { margin-top: 6px; }
     input[type="checkbox"] { margin-right: 6px; }
+    input:disabled {opacity: 0.5;}
+    label input:disabled + * {color: #aaa;}
+    label[for="keepLigand"]:has(input:disabled),
+    label[for="keepCofactor"]:has(input:disabled),
+    label[for="keepMetals"]:has(input:disabled) {color: #aaa;}
     button { display: block; padding: 10px 24px; background-color: #3498db; color: white; font-size: 15px; border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.3s; margin-top: 20px; }
     button:hover { background-color: #2980b9; }
     #chainSelector { margin-top: 10px; }
@@ -30,10 +35,13 @@
     <label for="pdbFile">📁 Upload a PDB File</label>
     <input type="file" id="pdbFile" accept=".pdb">
 
-    <label><input type="checkbox" id="keepLigand"> Keep Ligands</label>
-    <label><input type="checkbox" id="keepCofactor"> Keep Cofactors (e.g. NAD/FAD)</label>
-    <label><input type="checkbox" id="keepMetals"> Keep Metal Ions (ZN/FE/MG/CA)</label>
-    <label><input type="checkbox" id="keepchains"> Keep One Protein Chains (Oonly ATOM)</label>
+    <label for="keepLigand"><input type="checkbox" id="keepLigand"> Keep Ligands</label>
+    <label for="keepCofactor"><input type="checkbox" id="keepCofactor"> Keep Cofactors (e.g. NAD/FAD)</label>
+    <label for="keepMetals"><input type="checkbox" id="keepMetals"> Keep Metal Ions (ZN/FE/MG/CA)</label>
+    <label><input type="checkbox" id="onlyAtom"> Only ATOM </label>
+    <label><input type="checkbox" id="keepchains"> Select Protein Chains</label>
+   
+ 
 
     <div id="chainSelector" style="display: none;">
       <label style="margin-top: 12px;">Select Chains to Keep:</label>
@@ -43,6 +51,18 @@
     <button onclick="processPDB()">🛠️ Clean and Download</button>
 
     <div id="log">📥 Please select a PDB file to begin cleaning...</div>
+  </div>
+
+  <div
+    style="margin-top: 5px;padding: 20px 30px;border-radius: 10px;font-size: 15px;line-height: 1.6;color: #333;width: 950px;margin-left: auto;margin-right: auto;">
+    <p style="text-align: justify; color: #444;margin-top: -5px">
+      This tool performs automated filtering based on predefined residue categories (e.g., water, ions, ligands,
+      cofactors). While common functional components are retained according to user selection,
+      <strong>we strongly recommend visually inspecting the cleaned structure using PyMOL or other molecular visualization
+        tools</strong>. Manual inspection ensures that
+      biologically relevant entities—such as catalytic metal ions, active-site ligands, or bound cofactors—are not
+      inadvertently removed prior to downstream modeling or simulation.
+    </p>
   </div>
 
   <script>
@@ -66,9 +86,15 @@
       const chainID = line.charAt(21).trim();
 
       if (options.keepChains) {
-        if (!aaResidues.includes(resname)) return true;
-        if (options.selectedChains.length > 0 && !options.selectedChains.includes(chainID)) return true;
-        return false;
+        const isAA = aaResidues.includes(resname);
+        const isMetal = options.keepMetals && metalResidues.includes(resname);
+        const isCofactor = options.keepCofactor && cofactorResidues.includes(resname);
+        const isLigand = options.keepLigand && ligandResidues.includes(resname);
+        const isSelectedChain = options.selectedChains.length === 0 || options.selectedChains.includes(chainID);
+
+        // 只保留：在选中的链上，且是氨基酸、金属、辅因子或配体
+        if ((isAA && isSelectedChain) || isMetal || isCofactor || isLigand) return false;
+        return true;
       }
 
       if (solventResidues.includes(resname)) {
@@ -128,6 +154,17 @@
             chainMap[chainID].add(resKey);
           }
         }
+        // 🧹 二次清理：如果勾选 Only ATOM，就只保留 ATOM 和 TER 行
+        if (document.getElementById('onlyAtom').checked) {
+          const newKept = [];
+          for (const line of kept) {
+            if (line.startsWith('ATOM') || line.startsWith('TER')) {
+              newKept.push(line);
+            }
+          }
+          kept.length = 0;
+          kept.push(...newKept);
+        }
 
         const cleanedText = kept.join('\n');
         const filename = file.name.replace('.pdb', '_cleaned.pdb');
@@ -157,9 +194,6 @@
 
     document.getElementById('keepchains').addEventListener('change', function () {
       const disabled = this.checked;
-      document.getElementById('keepLigand').disabled = disabled;
-      document.getElementById('keepCofactor').disabled = disabled;
-      document.getElementById('keepMetals').disabled = disabled;
       document.getElementById('chainSelector').style.display = disabled ? 'block' : 'none';
     });
 
@@ -207,6 +241,13 @@
       };
       reader.readAsText(file);
     });
+  
+    document.getElementById('onlyAtom').addEventListener('change', function () {
+        const disabled = this.checked;
+        document.getElementById('keepLigand').disabled = disabled;
+        document.getElementById('keepCofactor').disabled = disabled;
+        document.getElementById('keepMetals').disabled = disabled;
+      });
   </script>
 </body>
 </html>
